@@ -1,6 +1,5 @@
-    python-telegram-bot==20.7
-    yfinance==0.2.39
-    pandas==2.1.4  # تم تحديث الإصدار
-    pandas_ta==0.3.14b  # تم تحديث الإصدار
-    wheel==0.43.0 # تم إضافة مكتبة wheel
-    
+python-telegram-bot==13.7
+yfinance==0.2.39
+pandas==1.5.3
+pandas_ta==0.3.14b
+wheel==0.43.0
