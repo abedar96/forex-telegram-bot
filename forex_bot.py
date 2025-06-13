@@ -1,11 +1,11 @@
 import logging
-import os # هذا السطر تم إضافته لجلب متغيرات البيئة
+import os
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
-    Application,
+    Updater, # تم التغيير من Application
     CommandHandler,
     CallbackQueryHandler,
-    ContextTypes,
+    CallbackContext # تم إضافة هذا ليتوافق مع Updater
 )
 import asyncio
 import yfinance as yf
@@ -51,7 +51,7 @@ TIME_FRAMES = {
 
 # --- وظائف معالجة الأوامر والاستجابات ---
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def start(update: Update, context: CallbackContext) -> None:
     """يرسل رسالة ترحيب ويعرض أزرار أزواج العملات."""
     user = update.effective_user
     await update.message.reply_html(
@@ -76,7 +76,7 @@ def get_time_frames_keyboard() -> InlineKeyboardMarkup:
         keyboard.append([InlineKeyboardButton(name, callback_data=f"select_tf_{code}")])
     return InlineKeyboardMarkup(keyboard)
 
-async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def button_callback_handler(update: Update, context: CallbackContext) -> None:
     """يتعامل مع نقرات الأزرار التفاعلية (Inline Keyboard)."""
     query = update.callback_query
     await query.answer() # يجب الرد على الـ CallbackQuery لتجنب ظهور "تحميل" للمستخدم
@@ -89,6 +89,7 @@ async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_
         context.user_data['selected_pair'] = selected_pair_code
         logger.info(f"المستخدم {query.from_user.id} اختار زوج: {CURRENCY_PAIRS.get(selected_pair_code, selected_pair_code)}")
 
+        # استخدام query.edit_message_text بدلاً من update.message.reply_html
         await query.edit_message_text(
             f"لقد اخترت: <b>{CURRENCY_PAIRS.get(selected_pair_code, selected_pair_code)}</b>.\n"
             "الآن، الرجاء اختيار الإطار الزمني للتحليل:",
@@ -131,10 +132,9 @@ async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_
                 forex_data = await get_forex_data_yf(selected_pair_yf, selected_timeframe_yf, period)
 
                 if forex_data is None or forex_data.empty:
-                    await query.message.reply_text(
-                        f"عذراً، لم أتمكن من جلب بيانات لـ <b>{display_pair_name}</b> على إطار <b>{display_timeframe_name}</b>.\n"
-                        "قد تكون البيانات غير متاحة أو هناك مشكلة مؤقتة. الرجاء المحاولة لاحقاً أو اختيار إطار زمني آخر.",
-                        parse_mode='HTML'
+                    await query.message.reply_html( # استخدام reply_html لضمان التنسيق
+                        f"عذراً، لم أتمكن من جلب بيانات لـ <b>{display_pair_name}</b> على إطار <b>{display_timeframe_name}</b>.<br>"
+                        "قد تكون البيانات غير متاحة أو هناك مشكلة مؤقتة. الرجاء المحاولة لاحقاً أو اختيار إطار زمني آخر."
                     )
                     return # إنهاء الوظيفة هنا
 
@@ -146,9 +146,8 @@ async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
             except Exception as e:
                 logger.error(f"حدث خطأ أثناء التحليل: {e}", exc_info=True)
-                await query.message.reply_text(
-                    "عذراً، حدث خطأ أثناء محاولة إجراء التحليل. الرجاء المحاولة لاحقاً.",
-                    parse_mode='HTML'
+                await query.message.reply_html( # استخدام reply_html لضمان التنسيق
+                    "عذراً، حدث خطأ أثناء محاولة إجراء التحليل. الرجاء المحاولة لاحقاً."
                 )
         else:
             await query.edit_message_text(
@@ -283,10 +282,9 @@ async def send_analysis_result(message, display_pair: str, display_timeframe: st
         f"{analysis_data}\n\n"
         "لإجراء تحليل جديد، اضغط /start."
     )
-    await message.reply_text(formatted_result, parse_mode='HTML')
+    await message.reply_html(formatted_result) # استخدام reply_html لضمان التنسيق
 
-# --- وظيفة إعداد البوت الرئيسية ---
-
+# --- وظيفة إعداد البوت الرئيسية (main) المُعدلة ---
 def main() -> None:
     """يبدأ تشغيل البوت."""
     # رمز البوت الخاص بك
@@ -295,24 +293,22 @@ def main() -> None:
     BOT_TOKEN = os.getenv("BOT_TOKEN")
     if not BOT_TOKEN:
         logger.error("لم يتم العثور على رمز البوت. يرجى تعيين متغير البيئة BOT_TOKEN.")
-        # يمكنك هنا إضافة رسالة تنبيه للمطور أو الخروج بشكل آمن
-        # على سبيل المثال، إذا كنت تشغل محليًا بدون متغير بيئة، يمكنك وضع الرمز هنا للتجربة:
-        # BOT_TOKEN = "7648591648:AAEmoZAAkjvlheCBNLwj7WG3XEqZpmNZAek"
-        # لكن عند النشر، يجب أن يكون موجودًا كمتغير بيئة.
         exit(1) # إيقاف البوت إذا لم يتم العثور على الرمز
 
-    application = Application.builder().token(BOT_TOKEN).build()
+    # تغيير طريقة التهيئة لـ python-telegram-bot v13.x
+    updater = Updater(BOT_TOKEN)
+    dispatcher = updater.dispatcher
 
     # إضافة معالجات الأوامر
-    application.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("start", start))
 
     # إضافة معالج لاستجابات الأزرار (Callback Queries)
-    application.add_handler(CallbackQueryHandler(button_callback_handler))
+    dispatcher.add_handler(CallbackQueryHandler(button_callback_handler))
 
     logger.info("البوت بدأ العمل...")
-    # ابدأ تشغيل البوت (سيستمر في العمل حتى يتم إيقافه يدوياً أو حدوث خطأ)
-    # allowed_updates=Update.ALL_TYPES يضمن معالجة جميع أنواع التحديثات.
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # ابدأ تشغيل البوت
+    updater.start_polling()
+    updater.idle() # لتشغيل البوت حتى يتم إيقافه يدوياً
 
 if __name__ == "__main__":
     main()
